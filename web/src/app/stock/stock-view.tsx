@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { BranchLogo } from "@/components/branch-logo";
 import { CandleChart } from "@/components/candle-chart";
 import { loginHref, useSession } from "@/components/session";
+import { Pager } from "@/components/ui";
 import { api } from "@/lib/api";
 import { formatDateTime, formatNumber } from "@/lib/format";
-import type { AuctionEvent, Candle, CandleSpan, StockAuction, StockQuote, StockSymbol, StockTrade } from "@/lib/types";
+import type { AuctionEvent, Candle, CandleSpan, StockAuction, StockPortfolio, StockQuote, StockSymbol, StockTrade } from "@/lib/types";
 
 const SPANS: [CandleSpan, string][] = [
   ["tick", "逐场"],
@@ -73,6 +75,7 @@ function Watchlist({ symbols, onOpen }: { symbols: StockSymbol[]; onOpen: (code:
           </button>
         ))}
       </div>
+      <Portfolio onOpen={onOpen} />
       <div className="wl-h">
         <span>名称代码</span>
         <span>最新</span>
@@ -80,6 +83,7 @@ function Watchlist({ symbols, onOpen }: { symbols: StockSymbol[]; onOpen: (code:
       </div>
       {symbols.map((s) => (
         <button key={s.code} type="button" className="wl" onClick={() => onOpen(s.code)}>
+          <BranchLogo code={s.code} className="lg" />
           <span className="nm">
             <b>{s.name}</b>
             <span>
@@ -99,27 +103,75 @@ function Watchlist({ symbols, onOpen }: { symbols: StockSymbol[]; onOpen: (code:
   );
 }
 
+function Portfolio({ onOpen }: { onOpen: (code: string) => void }) {
+  const { user } = useSession();
+  const [pf, setPf] = useState<StockPortfolio | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    api
+      .stockPortfolio()
+      .then(setPf)
+      .catch(() => {});
+  }, [user]);
+
+  const held = pf?.items.filter((h) => h.qty !== 0) ?? [];
+  if (!pf || (!held.length && !pf.total.realizedPnl)) return null;
+  return (
+    <div className="pf">
+      <h5>
+        我的持仓
+        <span>
+          浮动盈亏<b className={`sc-num ${cls(pf.total.floatingPnl)}`}>{signed(pf.total.floatingPnl, 0)}</b>
+          已实现<b className={`sc-num ${cls(pf.total.realizedPnl)}`}>{signed(pf.total.realizedPnl, 0)}</b>
+        </span>
+      </h5>
+      {held.map((h) => {
+        const cost = Math.abs(h.qty) * h.avgCost;
+        const pct = cost > 0 ? (h.floatingPnl / cost) * 100 : 0;
+        return (
+          <button key={h.symbol} type="button" className="pf-r" onClick={() => onOpen(h.symbol)}>
+            <BranchLogo code={h.symbol} className="lg" />
+            <span className="nm">
+              <b>{h.shortName || h.name}</b>
+              <span className="sc-num">
+                {h.qty < 0 ? "空" : ""}
+                {formatNumber(Math.abs(h.qty))} 股，成本 {h.avgCost.toFixed(2)}
+              </span>
+            </span>
+            <span className="mv">
+              <b className="sc-num">{h.price.toFixed(2)}</b>
+              <span className="sc-num">市值 {formatNumber(Math.abs(h.marketValue))}</span>
+            </span>
+            <span className={`pl ${cls(h.floatingPnl)}`}>
+              <b className="sc-num">{signed(h.floatingPnl, 0)}</b>
+              <span className="sc-num">{signed(pct)}%</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function Detail({ symbol, onBack }: { symbol: string; onBack: () => void }) {
   const { user, refresh } = useSession();
   const [quote, setQuote] = useState<StockQuote | null>(null);
   const [span, setSpan] = useState<CandleSpan>("day");
   const [candles, setCandles] = useState<Candle[] | null>(null);
-  const [auctions, setAuctions] = useState<StockAuction[]>([]);
-  const [trades, setTrades] = useState<StockTrade[]>([]);
+  const [ver, setVer] = useState(0);
   const [trade, setTrade] = useState<"buy" | "sell" | null>(null);
   const [err, setErr] = useState("");
 
   const reload = useCallback(async () => {
     try {
-      const [q, a] = await Promise.all([api.stockQuote(symbol), api.stockAuctions(symbol, 12)]);
-      setQuote(q);
-      setAuctions(a.items);
+      setQuote(await api.stockQuote(symbol));
+      setVer((v) => v + 1);
       setErr("");
-      if (user) setTrades((await api.stockTrades(1, 30, symbol)).items);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "加载失败");
     }
-  }, [symbol, user]);
+  }, [symbol]);
 
   useEffect(() => {
     void reload();
@@ -161,6 +213,7 @@ function Detail({ symbol, onBack }: { symbol: string; onBack: () => void }) {
       {q && (
         <>
           <div className="qt">
+            <BranchLogo code={symbol} className="lg" />
             <div className="l">
               <div className={`big sc-num ${cls(d)}`}>{q.price.toFixed(2)}</div>
               <div className={`chg sc-num ${cls(d)}`}>
@@ -219,65 +272,8 @@ function Detail({ symbol, onBack }: { symbol: string; onBack: () => void }) {
 
           {q.me && q.me.qty !== 0 && <Position quote={q} />}
 
-          <div className="mx">
-            <h5>
-              历次竞价<span>每日 {q.auctionTimes.join("、")}</span>
-            </h5>
-            {auctions.length ? (
-              <>
-                <div className="t head">
-                  <span>时间</span>
-                  <span>成交价</span>
-                  <span>涨跌</span>
-                  <span>买 / 卖</span>
-                </div>
-                {auctions.map((a) => (
-                  <div key={a.at} className="t">
-                    <span className="sc-num" style={{ color: "#666" }}>
-                      {formatDateTime(a.at)}
-                    </span>
-                    <span className={`sc-num ${cls(a.changePct)}`}>{a.priceAfter.toFixed(2)}</span>
-                    <span className={`sc-num ${cls(a.changePct)}`}>{signed(a.changePct)}%</span>
-                    <span className="sc-num">
-                      <span className="sc-up">{formatNumber(a.buyQty)}</span> / <span className="sc-down">{formatNumber(a.sellQty)}</span>
-                    </span>
-                  </div>
-                ))}
-              </>
-            ) : (
-              <div className="empty">暂无竞价记录</div>
-            )}
-          </div>
-
-          {user && (
-            <div className="mx">
-              <h5>我的成交</h5>
-              {trades.length ? (
-                <>
-                  <div className="t head">
-                    <span>时间</span>
-                    <span>价格</span>
-                    <span>数量</span>
-                    <span>金额</span>
-                  </div>
-                  {trades.map((t, i) => (
-                    <div key={`${t.at}-${i}`} className="t">
-                      <span className="sc-num" style={{ color: "#666" }}>
-                        {formatDateTime(t.at)}
-                      </span>
-                      <span className="sc-num">{t.price.toFixed(2)}</span>
-                      <span className={`sc-num ${t.side === "buy" ? "sc-up" : "sc-down"}`}>
-                        {formatNumber(t.qty)} {t.side === "buy" ? "买" : "卖"}
-                      </span>
-                      <span className="sc-num">{formatNumber(t.gross)}</span>
-                    </div>
-                  ))}
-                </>
-              ) : (
-                <div className="empty">暂无成交记录</div>
-              )}
-            </div>
-          )}
+          <Auctions symbol={symbol} times={q.auctionTimes} ver={ver} />
+          {user && <Trades symbol={symbol} ver={ver} />}
 
           <div className="tb">
             {user ? (
@@ -302,6 +298,102 @@ function Detail({ symbol, onBack }: { symbol: string; onBack: () => void }) {
 
           {trade && <TradeSheet quote={q} side={trade} onSide={setTrade} onClose={() => setTrade(null)} onTraded={traded} />}
         </>
+      )}
+    </div>
+  );
+}
+
+function Auctions({ symbol, times, ver }: { symbol: string; times: string[]; ver: number }) {
+  const [page, setPage] = useState(1);
+  const [items, setItems] = useState<StockAuction[]>([]);
+  const [total, setTotal] = useState(0);
+
+  useEffect(() => {
+    api
+      .stockAuctions(symbol, page, 12)
+      .then((r) => {
+        setItems(r.items);
+        setTotal(r.meta.total);
+      })
+      .catch(() => {});
+  }, [symbol, page, ver]);
+
+  return (
+    <div className="mx">
+      <h5>
+        历次竞价<span>每日 {times.join("、")}</span>
+      </h5>
+      {items.length ? (
+        <>
+          <div className="t head">
+            <span>时间</span>
+            <span>成交价</span>
+            <span>涨跌</span>
+            <span>买 / 卖</span>
+          </div>
+          {items.map((a) => (
+            <div key={a.at} className="t">
+              <span className="sc-num" style={{ color: "#666" }}>
+                {formatDateTime(a.at)}
+              </span>
+              <span className={`sc-num ${cls(a.changePct)}`}>{a.priceAfter.toFixed(2)}</span>
+              <span className={`sc-num ${cls(a.changePct)}`}>{signed(a.changePct)}%</span>
+              <span className="sc-num">
+                <span className="sc-up">{formatNumber(a.buyQty)}</span> / <span className="sc-down">{formatNumber(a.sellQty)}</span>
+              </span>
+            </div>
+          ))}
+          <Pager page={page} pages={Math.ceil(total / 12)} onPage={setPage} />
+        </>
+      ) : (
+        <div className="empty">暂无竞价记录</div>
+      )}
+    </div>
+  );
+}
+
+function Trades({ symbol, ver }: { symbol: string; ver: number }) {
+  const [page, setPage] = useState(1);
+  const [items, setItems] = useState<StockTrade[]>([]);
+  const [total, setTotal] = useState(0);
+
+  useEffect(() => {
+    api
+      .stockTrades(page, 20, symbol)
+      .then((r) => {
+        setItems(r.items);
+        setTotal(r.meta.total);
+      })
+      .catch(() => {});
+  }, [symbol, page, ver]);
+
+  return (
+    <div className="mx">
+      <h5>我的成交</h5>
+      {items.length ? (
+        <>
+          <div className="t head">
+            <span>时间</span>
+            <span>价格</span>
+            <span>数量</span>
+            <span>金额</span>
+          </div>
+          {items.map((t, i) => (
+            <div key={`${t.at}-${i}`} className="t">
+              <span className="sc-num" style={{ color: "#666" }}>
+                {formatDateTime(t.at)}
+              </span>
+              <span className="sc-num">{t.price.toFixed(2)}</span>
+              <span className={`sc-num ${t.side === "buy" ? "sc-up" : "sc-down"}`}>
+                {formatNumber(t.qty)} {t.side === "buy" ? "买" : "卖"}
+              </span>
+              <span className="sc-num">{formatNumber(t.gross)}</span>
+            </div>
+          ))}
+          <Pager page={page} pages={Math.ceil(total / 20)} onPage={setPage} />
+        </>
+      ) : (
+        <div className="empty">暂无成交记录</div>
       )}
     </div>
   );

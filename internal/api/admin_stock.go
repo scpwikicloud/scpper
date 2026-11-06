@@ -53,8 +53,6 @@ type adminStockState struct {
 	} `json:"shares"`
 
 	Top []adminStockPlayer `json:"top"`
-
-	Auctions []auctionRow `json:"auctions"`
 }
 
 type adminSymbolRow struct {
@@ -229,28 +227,6 @@ func (s *Server) handleAdminStock(w http.ResponseWriter, r *http.Request) error 
 	}
 	if st.Top == nil {
 		st.Top = []adminStockPlayer{}
-	}
-
-	auctionRows, err := s.db.Query(ctx,
-		`SELECT `+auctionCols+` FROM stock_auctions WHERE symbol = $1 ORDER BY at DESC LIMIT 30`, m.Code)
-	if err != nil {
-		return err
-	}
-	defer auctionRows.Close()
-	st.Auctions = []auctionRow{}
-	for auctionRows.Next() {
-		a, err := scanAuction(auctionRows)
-		if err != nil {
-			return err
-		}
-		st.Auctions = append(st.Auctions, a)
-	}
-	if err := auctionRows.Err(); err != nil {
-		return err
-	}
-	auctionRows.Close()
-	if err := fillEventTitles(ctx, s.db, st.Auctions); err != nil {
-		return err
 	}
 
 	httpx.OK(w, st)

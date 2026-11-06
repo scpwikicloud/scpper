@@ -51,7 +51,7 @@ export const REASON_LABEL: Record<string, string> = {
   stock_hold: "下单冻结",
   stock_unhold: "解除冻结",
   stock_settle: "成交结算",
-  stock_margin: "保证金",
+  stock_margin: "开仓扣款",
 };
 
 export function coinReasonLabel(reason: string): string {

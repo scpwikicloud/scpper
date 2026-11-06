@@ -9,6 +9,7 @@ import type {
   AdminStockState,
   AdminTask,
   GachaParams,
+  StockAuction,
   StockHolder,
   StockJob,
   StockParams,
@@ -1222,62 +1223,7 @@ function StockTab() {
       </Section>
 
       <Section title="竞价记录">
-        {st.auctions.length ? (
-          <Panel>
-            <div className="overflow-x-auto">
-              <table className="sc-table w-full text-[11.5px]">
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th className="text-right">价格</th>
-                    <th className="text-right">涨跌</th>
-                    <th className="text-right">单数</th>
-                    <th className="text-right">买 / 卖</th>
-                    <th className="text-right">推动</th>
-                    <th className="text-right">新页 / 平时</th>
-                    <th className="text-right">动态</th>
-                    <th className="text-right">回归</th>
-                    <th className="text-right">随机</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {st.auctions.map((a) => (
-                    <tr key={a.at}>
-                      <td className="sc-num">{formatDateTime(a.at)}</td>
-                      <td className="sc-num text-right">
-                        {a.priceBefore.toFixed(2)} 变为 {a.priceAfter.toFixed(2)}
-                      </td>
-                      <td className="sc-num text-right" style={{ color: pctColor(a.changePct) }}>
-                        {pctText(a.changePct)}
-                      </td>
-                      <td className="sc-num text-right">{a.orders}</td>
-                      <td className="sc-num text-right">
-                        {formatNumber(a.buyQty)} / {formatNumber(a.sellQty)}
-                      </td>
-                      <td className="sc-num text-right" style={{ color: pctColor(a.impactPct) }}>
-                        {pctText(a.impactPct)}
-                      </td>
-                      <td className="sc-num text-right">
-                        {a.newPages} / {a.expected.toFixed(1)}
-                      </td>
-                      <td className="sc-num text-right" style={{ color: pctColor(a.eventPct) }}>
-                        {pctText(a.eventPct)}
-                      </td>
-                      <td className="sc-num text-right" style={{ color: pctColor(a.driftPct) }}>
-                        {pctText(a.driftPct)}
-                      </td>
-                      <td className="sc-num text-right" style={{ color: pctColor(a.shockPct) }}>
-                        {pctText(a.shockPct)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
-        ) : (
-          <EmptyState title="暂无竞价记录" />
-        )}
+        <Auctions code={symbol} ver={st} />
       </Section>
 
       <Section title="盈亏排行（前 20）">
@@ -1331,6 +1277,85 @@ function StockTab() {
         </div>
       )}
     </>
+  );
+}
+
+function Auctions({ code, ver }: { code: string; ver: unknown }) {
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<{ items: StockAuction[]; meta: { total: number } } | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setPage(1);
+  }, [code]);
+
+  useEffect(() => {
+    api.admin
+      .stockAuctions(code, page, 30)
+      .then((r) => {
+        setData(r);
+        setError("");
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "加载失败"));
+  }, [code, page, ver]);
+
+  if (error) return <ErrorState message={error} />;
+  if (!data) return <ListSkeleton rows={4} />;
+  if (!data.items.length) return <EmptyState title="暂无竞价记录" />;
+  return (
+    <Panel>
+      <div className="overflow-x-auto">
+        <table className="sc-table w-full text-[11.5px]">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th className="text-right">价格</th>
+              <th className="text-right">涨跌</th>
+              <th className="text-right">单数</th>
+              <th className="text-right">买 / 卖</th>
+              <th className="text-right">推动</th>
+              <th className="text-right">新页 / 平时</th>
+              <th className="text-right">动态</th>
+              <th className="text-right">回归</th>
+              <th className="text-right">随机</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.items.map((a) => (
+              <tr key={a.at}>
+                <td className="sc-num">{formatDateTime(a.at)}</td>
+                <td className="sc-num text-right">
+                  {a.priceBefore.toFixed(2)} 变为 {a.priceAfter.toFixed(2)}
+                </td>
+                <td className="sc-num text-right" style={{ color: pctColor(a.changePct) }}>
+                  {pctText(a.changePct)}
+                </td>
+                <td className="sc-num text-right">{a.orders}</td>
+                <td className="sc-num text-right">
+                  {formatNumber(a.buyQty)} / {formatNumber(a.sellQty)}
+                </td>
+                <td className="sc-num text-right" style={{ color: pctColor(a.impactPct) }}>
+                  {pctText(a.impactPct)}
+                </td>
+                <td className="sc-num text-right">
+                  {a.newPages} / {a.expected.toFixed(1)}
+                </td>
+                <td className="sc-num text-right" style={{ color: pctColor(a.eventPct) }}>
+                  {pctText(a.eventPct)}
+                </td>
+                <td className="sc-num text-right" style={{ color: pctColor(a.driftPct) }}>
+                  {pctText(a.driftPct)}
+                </td>
+                <td className="sc-num text-right" style={{ color: pctColor(a.shockPct) }}>
+                  {pctText(a.shockPct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pager page={page} pages={Math.ceil(data.meta.total / 30)} onPage={setPage} />
+    </Panel>
   );
 }
 

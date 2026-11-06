@@ -791,7 +791,6 @@ export type AdminStockState = {
     openOrders: number;
   };
   top: AdminStockPlayer[];
-  auctions: StockAuction[];
 };
 
 

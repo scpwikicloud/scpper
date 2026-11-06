@@ -314,6 +314,11 @@ func (s *Server) fillAuctionOrder(
 	gross := int64(math.Round(float64(qty) * price))
 	fee := tradeFee(gross, p.FeePct)
 
+	// The hold was sized for the worst price. Handing all of it back before the
+	// charge lets the ledger show what the fill cost.
+	if err := releaseHold(ctx, tx, orderID, userID); err != nil {
+		return err
+	}
 	if err := settleUserLeg(ctx, tx, m.Code, userID, dQty, price, fee, lev, p.FeePct, orderID); err != nil {
 		return err
 	}
@@ -328,24 +333,26 @@ func (s *Server) fillAuctionOrder(
 		return err
 	}
 
-	var left int64
-	if err := tx.QueryRow(ctx, `
+	_, err := tx.Exec(ctx, `
 		UPDATE stock_orders SET filled = qty, status = 'filled', closed_at = now(), price = $2
-		WHERE id = $1 RETURNING hold_coins`, orderID, price).Scan(&left); err != nil {
+		WHERE id = $1`, orderID, price)
+	return err
+}
+
+func releaseHold(ctx context.Context, tx pgx.Tx, orderID, userID int64) error {
+	var hold int64
+	if err := tx.QueryRow(ctx,
+		`SELECT hold_coins FROM stock_orders WHERE id = $1 FOR UPDATE`, orderID).Scan(&hold); err != nil {
 		return err
 	}
-	if left > 0 {
-		if _, err := applyCoinDelta(ctx, tx, userID, left,
-			"stock_unhold", "stock_order", &orderID, nil, nil); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx,
-			`UPDATE stock_orders SET hold_coins = 0 WHERE id = $1`, orderID); err != nil {
-			return err
-		}
+	if hold <= 0 {
+		return nil
 	}
-
-	return nil
+	if _, err := tx.Exec(ctx, `UPDATE stock_orders SET hold_coins = 0 WHERE id = $1`, orderID); err != nil {
+		return err
+	}
+	_, err := applyCoinDelta(ctx, tx, userID, hold, "stock_unhold", "stock_order", &orderID, nil, nil)
+	return err
 }
 
 func cancelOrderRefund(ctx context.Context, tx pgx.Tx, orderID, userID int64) error {
@@ -497,15 +504,28 @@ func fillEventTitles(ctx context.Context, q interface {
 }
 
 func (s *Server) handleStockAuctions(w http.ResponseWriter, r *http.Request) error {
-	ctx := r.Context()
 	m, err := s.market(r)
 	if err != nil {
 		return err
 	}
-	limit := httpx.QueryInt(r, "limit", 20, 1, 100)
+	return s.writeAuctions(w, r, m.Code)
+}
+
+func (s *Server) handleAdminStockAuctions(w http.ResponseWriter, r *http.Request) error {
+	return s.writeAuctions(w, r, strings.ToUpper(urlParam(r, "code")))
+}
+
+func (s *Server) writeAuctions(w http.ResponseWriter, r *http.Request, code string) error {
+	ctx := r.Context()
+	pg := httpx.ParsePage(r, 20, 100)
+	var total int
+	if err := s.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM stock_auctions WHERE symbol = $1`, code).Scan(&total); err != nil {
+		return err
+	}
 	rows, err := s.db.Query(ctx,
-		`SELECT `+auctionCols+` FROM stock_auctions WHERE symbol = $1 ORDER BY at DESC LIMIT $2`,
-		m.Code, limit)
+		`SELECT `+auctionCols+` FROM stock_auctions WHERE symbol = $1 ORDER BY at DESC LIMIT $2 OFFSET $3`,
+		code, pg.Size, pg.Offset)
 	if err != nil {
 		return err
 	}
@@ -524,7 +544,7 @@ func (s *Server) handleStockAuctions(w http.ResponseWriter, r *http.Request) err
 	if err := fillEventTitles(ctx, s.db, items); err != nil {
 		return err
 	}
-	httpx.OK(w, map[string]any{"items": items})
+	httpx.OK(w, map[string]any{"items": items, "meta": httpx.Meta(pg, total)})
 	return nil
 }
 

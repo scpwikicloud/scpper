@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CardFace, RARITIES, RARITY_LABEL, RARITY_RANGE, RarityTag } from "@/components/gacha-card";
 import { GachaResult } from "@/components/gacha-reveal";
 import { loginHref, useSession } from "@/components/session";
+import { Pager } from "@/components/ui";
 import { api } from "@/lib/api";
 import { articleHref, formatDateTime, formatNumber, formatRating } from "@/lib/format";
 import type { GachaCard, GachaInfo, GachaListing, MyListing, OwnedCard, PullRecord } from "@/lib/types";
@@ -264,13 +265,14 @@ function Collection({ loggedIn, onChanged }: { loggedIn: boolean; onChanged: () 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [listing, setListing] = useState<OwnedCard | null>(null);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     if (!loggedIn) return;
     setLoading(true);
     setErr("");
     try {
-      const r = await api.gachaCollection(rarity, 1, 60);
+      const r = await api.gachaCollection(rarity, page, 60);
       setItems(r.items);
       setTotal(r.meta.total);
     } catch (e) {
@@ -278,7 +280,7 @@ function Collection({ loggedIn, onChanged }: { loggedIn: boolean; onChanged: () 
     } finally {
       setLoading(false);
     }
-  }, [loggedIn, rarity]);
+  }, [loggedIn, rarity, page]);
 
   useEffect(() => {
     void load();
@@ -289,7 +291,13 @@ function Collection({ loggedIn, onChanged }: { loggedIn: boolean; onChanged: () 
   return (
     <div className="gcard">
       <div className="gfilter">
-        <RarityFilter value={rarity} onChange={setRarity} />
+        <RarityFilter
+          value={rarity}
+          onChange={(v) => {
+            setRarity(v);
+            setPage(1);
+          }}
+        />
         <span className="count sc-num">{formatNumber(total)} 种</span>
       </div>
       {err && <div className="msg err" style={{ margin: 0 }}>{err}</div>}
@@ -309,6 +317,7 @@ function Collection({ loggedIn, onChanged }: { loggedIn: boolean; onChanged: () 
       ) : (
         <p className="py-8 text-center text-[12px]" style={{ color: "#7a8aa6" }}>暂无卡牌</p>
       )}
+      <Pager page={page} pages={Math.ceil(total / 60)} onPage={setPage} />
       {listing && (
         <ListDialog
           card={listing}
@@ -392,20 +401,23 @@ function Market({ loggedIn, onChanged }: { loggedIn: boolean; onChanged: () => v
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setErr("");
     try {
-      const r = await api.gachaMarket({ rarity, sort, limit: 40 });
+      const r = await api.gachaMarket({ rarity, sort, page, limit: 40 });
       setItems(r.items);
+      setTotal(r.meta.total);
       if (loggedIn) setMine((await api.gachaMyListings()).items);
     } catch (e) {
       setErr(fail(e, "加载失败"));
     } finally {
       setLoading(false);
     }
-  }, [rarity, sort, loggedIn]);
+  }, [rarity, sort, page, loggedIn]);
 
   useEffect(() => {
     void load();
@@ -455,8 +467,21 @@ function Market({ loggedIn, onChanged }: { loggedIn: boolean; onChanged: () => v
       )}
       <div className="gcard">
         <div className="gfilter">
-          <RarityFilter value={rarity} onChange={setRarity} />
-          <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="排序">
+          <RarityFilter
+            value={rarity}
+            onChange={(v) => {
+              setRarity(v);
+              setPage(1);
+            }}
+          />
+          <select
+            value={sort}
+            onChange={(e) => {
+              setSort(e.target.value);
+              setPage(1);
+            }}
+            aria-label="排序"
+          >
             <option value="new">最新上架</option>
             <option value="price">价格从低到高</option>
             <option value="rarity">品质优先</option>
@@ -488,6 +513,7 @@ function Market({ loggedIn, onChanged }: { loggedIn: boolean; onChanged: () => v
         ) : (
           <p className="py-8 text-center text-[12px]" style={{ color: "#7a8aa6" }}>暂无在售卡牌</p>
         )}
+        <Pager page={page} pages={Math.ceil(total / 40)} onPage={setPage} />
       </div>
     </>
   );
@@ -495,18 +521,24 @@ function Market({ loggedIn, onChanged }: { loggedIn: boolean; onChanged: () => v
 
 function History({ loggedIn }: { loggedIn: boolean }) {
   const [items, setItems] = useState<PullRecord[] | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     if (!loggedIn) return;
     let live = true;
     api
-      .gachaHistory(1, 100)
-      .then((r) => live && setItems(r.items))
+      .gachaHistory(page, 50)
+      .then((r) => {
+        if (!live) return;
+        setItems(r.items);
+        setTotal(r.meta.total);
+      })
       .catch(() => live && setItems([]));
     return () => {
       live = false;
     };
-  }, [loggedIn]);
+  }, [loggedIn, page]);
 
   if (!loggedIn) return <Login what="抽卡记录" />;
 
@@ -528,6 +560,7 @@ function History({ loggedIn }: { loggedIn: boolean }) {
           </div>
         ))
       )}
+      <Pager page={page} pages={Math.ceil(total / 50)} onPage={setPage} />
     </div>
   );
 }

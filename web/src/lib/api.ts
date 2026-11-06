@@ -139,8 +139,8 @@ export const api = {
     request<{ span: string; items: Candle[]; listedAt: string | null }>(
       `/api/stock/candles${qs({ span, symbol })}`,
     ),
-  stockAuctions: (symbol = "CLOUD", limit = 12) =>
-    request<{ items: StockAuction[] }>(`/api/stock/auctions${qs({ symbol, limit })}`),
+  stockAuctions: (symbol = "CLOUD", p = 1, limit = 12) =>
+    request<ListResponse<StockAuction>>(`/api/stock/auctions${qs({ symbol, page: p, limit })}`),
   stockPortfolio: () => request<StockPortfolio>("/api/stock/portfolio"),
   stockPlace: ({ symbol, ...body }: { symbol?: string; side: "buy" | "sell"; qty: number; leverage?: number }) =>
     request<{
@@ -182,6 +182,8 @@ export const api = {
       request<TaskCompletions>(`/api/admin/tasks/${encodeURIComponent(code)}/completions${qs({ period, page: p, limit })}`),
     stockHolders: (code: string, p = 1, limit = 50) =>
       request<ListResponse<StockHolder>>(`/api/admin/stock/symbols/${code}/holders${qs({ page: p, limit })}`),
+    stockAuctions: (code: string, p = 1, limit = 30) =>
+      request<ListResponse<StockAuction>>(`/api/admin/stock/symbols/${code}/auctions${qs({ page: p, limit })}`),
     tasks: () => request<{ items: AdminTask[] }>("/api/admin/tasks"),
     saveTask: (task: AdminTask) => request<AdminTask>("/api/admin/tasks", { method: "POST", body: task }),
     gacha: () => request<GachaParams>("/api/admin/gacha"),
