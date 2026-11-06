@@ -106,6 +106,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/users", httpx.Wrap(s.handleAdminUsers))
 			r.Post("/users/{id}/coins", httpx.Wrap(s.handleAdminGrantCoins))
 			r.Post("/users/{id}/role", httpx.Wrap(s.handleAdminSetRole))
+			r.Get("/users/{id}/positions", httpx.Wrap(s.handleAdminUserPositions))
 			r.Get("/ledger", httpx.Wrap(s.handleAdminLedger))
 			r.Post("/coins/grant-all", httpx.Wrap(s.handleAdminGrantAll))
 

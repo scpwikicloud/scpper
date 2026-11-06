@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -176,6 +177,54 @@ func (s *Server) handleAdminTaskCompletions(w http.ResponseWriter, r *http.Reque
 		return err
 	}
 	httpx.OK(w, map[string]any{"period": period, "periods": periods, "items": items, "meta": httpx.Meta(pg, total)})
+	return nil
+}
+
+func (s *Server) handleAdminUserPositions(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	id, err := strconv.ParseInt(urlParam(r, "id"), 10, 64)
+	if err != nil {
+		return httpx.BadRequest("用户编号无效")
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT p.symbol, y.short_name, p.qty, p.locked_qty, p.avg_cost, p.margin, p.realized_pnl, k.p_ref
+		FROM stock_positions p
+		JOIN stock_symbols y ON y.code = p.symbol
+		JOIN stock_maker   k ON k.symbol = p.symbol
+		WHERE p.user_id = $1 AND (p.qty <> 0 OR p.locked_qty <> 0)
+		ORDER BY y.sort, y.code`, id)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type position struct {
+		Symbol      string  `json:"symbol"`
+		ShortName   string  `json:"shortName"`
+		Qty         int64   `json:"qty"`
+		LockedQty   int64   `json:"lockedQty"`
+		AvgCost     float64 `json:"avgCost"`
+		Price       float64 `json:"price"`
+		Margin      int64   `json:"margin"`
+		RealizedPnl int64   `json:"realizedPnl"`
+		FloatingPnl int64   `json:"floatingPnl"`
+		Value       int64   `json:"value"`
+	}
+	items := []position{}
+	for rows.Next() {
+		var p position
+		if err := rows.Scan(&p.Symbol, &p.ShortName, &p.Qty, &p.LockedQty, &p.AvgCost,
+			&p.Margin, &p.RealizedPnl, &p.Price); err != nil {
+			return err
+		}
+		p.FloatingPnl = int64(math.Round(float64(p.Qty) * (p.Price - p.AvgCost)))
+		p.Value = int64(math.Round(float64(p.Qty) * p.Price))
+		p.AvgCost, p.Price = round2(p.AvgCost), round2(p.Price)
+		items = append(items, p)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	httpx.OK(w, map[string]any{"items": items})
 	return nil
 }
 

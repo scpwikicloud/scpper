@@ -538,9 +538,6 @@ export interface StockAuction {
   priceAfter: number;
   changePct: number;
   fair: number;
-  orders: number;
-  buyQty: number;
-  sellQty: number;
   impactPct: number;
   driftPct: number;
   shockPct: number;
@@ -548,6 +545,25 @@ export interface StockAuction {
   newPages: number;
   expected: number;
   events: AuctionEvent[];
+}
+
+export interface AdminAuction extends StockAuction {
+  orders: number;
+  buyQty: number;
+  sellQty: number;
+}
+
+export interface UserPosition {
+  symbol: string;
+  shortName: string;
+  qty: number;
+  lockedQty: number;
+  avgCost: number;
+  price: number;
+  margin: number;
+  realizedPnl: number;
+  floatingPnl: number;
+  value: number;
 }
 
 export interface PendingOrder {
@@ -754,6 +770,8 @@ export type AdminSymbolRow = {
   lastVoteAt?: string | null;
   sweptAt?: string | null;
   upstreamStale: boolean;
+  holders: number;
+  openOrders: number;
 };
 
 export type AdminStockState = {
@@ -763,6 +781,14 @@ export type AdminStockState = {
   params: StockParams;
   overlay: StockParams;
   symbols: AdminSymbolRow[];
+  market: {
+    holders: number;
+    openOrders: number;
+    bought: number;
+    sold: number;
+    fees: number;
+    trades: number;
+  };
   shares: {
     positions: number;
     maker: number;

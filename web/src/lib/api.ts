@@ -1,4 +1,5 @@
 import type {
+  AdminAuction,
   AdminLedger,
   AdminStockState,
   AdminTask,
@@ -27,6 +28,7 @@ import type {
   TaskCompletions,
   TasksResponse,
   WealthRankRow,
+  UserPosition,
 } from "./types";
 
 export const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "/scpper";
@@ -183,7 +185,8 @@ export const api = {
     stockHolders: (code: string, p = 1, limit = 50) =>
       request<ListResponse<StockHolder>>(`/api/admin/stock/symbols/${code}/holders${qs({ page: p, limit })}`),
     stockAuctions: (code: string, p = 1, limit = 30) =>
-      request<ListResponse<StockAuction>>(`/api/admin/stock/symbols/${code}/auctions${qs({ page: p, limit })}`),
+      request<ListResponse<AdminAuction>>(`/api/admin/stock/symbols/${code}/auctions${qs({ page: p, limit })}`),
+    userPositions: (userId: number) => request<{ items: UserPosition[] }>(`/api/admin/users/${userId}/positions`),
     tasks: () => request<{ items: AdminTask[] }>("/api/admin/tasks"),
     saveTask: (task: AdminTask) => request<AdminTask>("/api/admin/tasks", { method: "POST", body: task }),
     gacha: () => request<GachaParams>("/api/admin/gacha"),
@@ -215,7 +218,7 @@ export const api = {
     stockParams: (body: StockParams) =>
       request<StockParams>("/api/admin/stock/params", { method: "POST", body }),
     stockAuction: (symbol: string) =>
-      request<{ symbol: string; auction: StockAuction | null }>(`/api/admin/stock/auction${qs({ symbol })}`, {
+      request<{ symbol: string; auction: AdminAuction | null }>(`/api/admin/stock/auction${qs({ symbol })}`, {
         method: "POST",
       }),
   },

@@ -9,11 +9,12 @@ import type {
   AdminStockState,
   AdminTask,
   GachaParams,
-  StockAuction,
+  AdminAuction,
   StockHolder,
   StockJob,
   StockParams,
   TaskCompletions,
+  UserPosition,
 } from "@/lib/types";
 
 type Tab = "overview" | "users" | "ledger" | "tasks" | "gacha" | "stock";
@@ -232,6 +233,7 @@ function UsersTab() {
             </div>
             {open === u.id && (
               <div className="border-t px-3.5 py-3" style={{ borderColor: "var(--sc-border)", background: "var(--sc-surface-2)" }}>
+                <Positions user={u.id} />
                 <LedgerList user={u.id} />
               </div>
             )}
@@ -243,6 +245,62 @@ function UsersTab() {
       </Panel>
       <Pager page={page} pages={pages} onPage={(p) => void load(q, p)} />
     </>
+  );
+}
+
+function Positions({ user }: { user: number }) {
+  const [items, setItems] = useState<UserPosition[] | null>(null);
+
+  useEffect(() => {
+    api.admin
+      .userPositions(user)
+      .then((r) => setItems(r.items))
+      .catch(() => setItems([]));
+  }, [user]);
+
+  if (!items) return <div className="sc-skeleton mb-3 h-10 w-full" />;
+  if (!items.length) {
+    return (
+      <p className="mb-3 text-[12px]" style={{ color: "var(--sc-text-3)" }}>
+        未持有股票
+      </p>
+    );
+  }
+  return (
+    <div className="mb-3 overflow-x-auto">
+      <table className="sc-table w-full text-[11.5px]">
+        <thead>
+          <tr>
+            <th>股票</th>
+            <th className="text-right">持仓</th>
+            <th className="text-right">挂单冻结</th>
+            <th className="text-right">成本</th>
+            <th className="text-right">现价</th>
+            <th className="text-right">市值</th>
+            <th className="text-right">浮动盈亏</th>
+            <th className="text-right">已实现</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((p) => (
+            <tr key={p.symbol}>
+              <td>{p.shortName}</td>
+              <td className="sc-num text-right">{formatNumber(p.qty)}</td>
+              <td className="sc-num text-right">{formatNumber(p.lockedQty)}</td>
+              <td className="sc-num text-right">{p.avgCost.toFixed(2)}</td>
+              <td className="sc-num text-right">{p.price.toFixed(2)}</td>
+              <td className="sc-num text-right">{formatNumber(p.value)}</td>
+              <td className="sc-num text-right" style={{ color: pctColor(p.floatingPnl) }}>
+                {formatNumber(p.floatingPnl)}
+              </td>
+              <td className="sc-num text-right" style={{ color: pctColor(p.realizedPnl) }}>
+                {formatNumber(p.realizedPnl)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -927,6 +985,18 @@ function StockTab() {
 
   return (
     <>
+      <Panel className="mb-3 p-3">
+        <div className="mb-2 text-[12px] font-semibold">全市场</div>
+        <div className="grid grid-cols-2 gap-x-3 sm:grid-cols-4">
+          <StatTile label="持仓人数" value={formatNumber(st.market.holders)} />
+          <StatTile label="待撮合单" value={formatNumber(st.market.openOrders)} />
+          <StatTile label="累计买入" value={formatNumber(st.market.bought)} tone="coin" />
+          <StatTile label="累计卖出" value={formatNumber(st.market.sold)} tone="coin" />
+          <StatTile label="净流入" value={formatNumber(st.market.bought - st.market.sold)} />
+          <StatTile label="累计手续费" value={formatNumber(st.market.fees)} />
+          <StatTile label="累计成交笔数" value={formatNumber(st.market.trades)} />
+        </div>
+      </Panel>
       {jobs.length > 0 && (
         <Panel className="mb-3 p-3">
           <div className="mb-2 text-[12px] font-semibold">后台任务</div>
@@ -971,6 +1041,8 @@ function StockTab() {
                 <th>来源</th>
                 <th className="text-right">现价</th>
                 <th className="text-right">合理价</th>
+                <th className="text-right">持仓人数</th>
+                <th className="text-right">待撮合单</th>
                 <th className="text-right">镜像页数</th>
                 <th className="text-right">scaleBase</th>
                 <th>上游最后投票</th>
@@ -985,6 +1057,8 @@ function StockTab() {
                   <td>{y.source === "crom" ? "Crom" : "本地"}</td>
                   <td className="sc-num text-right">{y.price ? y.price.toFixed(2) : "—"}</td>
                   <td className="sc-num text-right">{y.fair ? y.fair.toFixed(2) : "—"}</td>
+                  <td className="sc-num text-right">{formatNumber(y.holders)}</td>
+                  <td className="sc-num text-right">{formatNumber(y.openOrders)}</td>
                   <td className="sc-num text-right">
                     {y.source === "crom" ? formatNumber(y.mirrorPages) : "—"}
                   </td>
@@ -1282,7 +1356,7 @@ function StockTab() {
 
 function Auctions({ code, ver }: { code: string; ver: unknown }) {
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<{ items: StockAuction[]; meta: { total: number } } | null>(null);
+  const [data, setData] = useState<{ items: AdminAuction[]; meta: { total: number } } | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {

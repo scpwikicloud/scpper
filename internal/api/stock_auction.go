@@ -46,6 +46,30 @@ type auctionRow struct {
 	Events      []auctionEvent `json:"events"`
 }
 
+type publicAuction struct {
+	At          time.Time      `json:"at"`
+	PriceBefore float64        `json:"priceBefore"`
+	PriceAfter  float64        `json:"priceAfter"`
+	ChangePct   float64        `json:"changePct"`
+	Fair        float64        `json:"fair"`
+	Volume      int64          `json:"volume"`
+	ImpactPct   float64        `json:"impactPct"`
+	DriftPct    float64        `json:"driftPct"`
+	ShockPct    float64        `json:"shockPct"`
+	EventPct    float64        `json:"eventPct"`
+	NewPages    int            `json:"newPages"`
+	Expected    float64        `json:"expected"`
+	Events      []auctionEvent `json:"events"`
+}
+
+func (a auctionRow) public() publicAuction {
+	return publicAuction{
+		At: a.At, PriceBefore: a.PriceBefore, PriceAfter: a.PriceAfter, ChangePct: a.ChangePct,
+		Fair: a.Fair, Volume: a.BuyQty + a.SellQty, ImpactPct: a.ImpactPct, DriftPct: a.DriftPct,
+		ShockPct: a.ShockPct, EventPct: a.EventPct, NewPages: a.NewPages, Expected: a.Expected, Events: a.Events,
+	}
+}
+
 const auctionCols = `at, price_before, price_after, fair, orders, buy_qty, sell_qty,
 	impact_pct, drift_pct, shock_pct, event_pct, new_pages, expected, events`
 
@@ -508,14 +532,14 @@ func (s *Server) handleStockAuctions(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return err
 	}
-	return s.writeAuctions(w, r, m.Code)
+	return s.writeAuctions(w, r, m.Code, false)
 }
 
 func (s *Server) handleAdminStockAuctions(w http.ResponseWriter, r *http.Request) error {
-	return s.writeAuctions(w, r, strings.ToUpper(urlParam(r, "code")))
+	return s.writeAuctions(w, r, strings.ToUpper(urlParam(r, "code")), true)
 }
 
-func (s *Server) writeAuctions(w http.ResponseWriter, r *http.Request, code string) error {
+func (s *Server) writeAuctions(w http.ResponseWriter, r *http.Request, code string, full bool) error {
 	ctx := r.Context()
 	pg := httpx.ParsePage(r, 20, 100)
 	var total int
@@ -544,7 +568,16 @@ func (s *Server) writeAuctions(w http.ResponseWriter, r *http.Request, code stri
 	if err := fillEventTitles(ctx, s.db, items); err != nil {
 		return err
 	}
-	httpx.OK(w, map[string]any{"items": items, "meta": httpx.Meta(pg, total)})
+	meta := httpx.Meta(pg, total)
+	if full {
+		httpx.OK(w, map[string]any{"items": items, "meta": meta})
+		return nil
+	}
+	public := make([]publicAuction, len(items))
+	for i, a := range items {
+		public[i] = a.public()
+	}
+	httpx.OK(w, map[string]any{"items": public, "meta": meta})
 	return nil
 }
 

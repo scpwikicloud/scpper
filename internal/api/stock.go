@@ -198,7 +198,7 @@ func (s *Server) handleStockQuote(w http.ResponseWriter, r *http.Request) error 
 		if err := fillEventTitles(ctx, s.db, list); err != nil {
 			return err
 		}
-		out["lastAuction"] = list[0]
+		out["lastAuction"] = list[0].public()
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}

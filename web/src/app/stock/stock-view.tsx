@@ -325,22 +325,18 @@ function Auctions({ symbol, times, ver }: { symbol: string; times: string[]; ver
       </h5>
       {items.length ? (
         <>
-          <div className="t head">
+          <div className="t t3 head">
             <span>时间</span>
             <span>成交价</span>
             <span>涨跌</span>
-            <span>买 / 卖</span>
           </div>
           {items.map((a) => (
-            <div key={a.at} className="t">
+            <div key={a.at} className="t t3">
               <span className="sc-num" style={{ color: "#666" }}>
                 {formatDateTime(a.at)}
               </span>
               <span className={`sc-num ${cls(a.changePct)}`}>{a.priceAfter.toFixed(2)}</span>
               <span className={`sc-num ${cls(a.changePct)}`}>{signed(a.changePct)}%</span>
-              <span className="sc-num">
-                <span className="sc-up">{formatNumber(a.buyQty)}</span> / <span className="sc-down">{formatNumber(a.sellQty)}</span>
-              </span>
             </div>
           ))}
           <Pager page={page} pages={Math.ceil(total / 12)} onPage={setPage} />

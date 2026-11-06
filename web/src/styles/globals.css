@@ -872,6 +872,9 @@ button {
   padding: 5px 12px;
   font-size: 12px;
 }
+.mx .t.t3 {
+  grid-template-columns: 1.4fr 1fr 1fr;
+}
 .mx .t > span:not(:first-child) {
   text-align: right;
 }

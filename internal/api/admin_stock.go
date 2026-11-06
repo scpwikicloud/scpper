@@ -22,6 +22,15 @@ type adminStockState struct {
 
 	Symbols []adminSymbolRow `json:"symbols"`
 
+	Market struct {
+		Holders    int   `json:"holders"`
+		OpenOrders int   `json:"openOrders"`
+		Bought     int64 `json:"bought"`
+		Sold       int64 `json:"sold"`
+		Fees       int64 `json:"fees"`
+		Trades     int   `json:"trades"`
+	} `json:"market"`
+
 	Book struct {
 		Inventory      int64   `json:"inventory"`
 		Cash           int64   `json:"cash"`
@@ -72,6 +81,8 @@ type adminSymbolRow struct {
 	LastVoteAt    *time.Time `json:"lastVoteAt,omitempty"`
 	SweptAt       *time.Time `json:"sweptAt,omitempty"`
 	UpstreamStale bool       `json:"upstreamStale"`
+	Holders       int        `json:"holders"`
+	OpenOrders    int        `json:"openOrders"`
 }
 
 type adminStockPlayer struct {
@@ -99,7 +110,10 @@ func (s *Server) adminSymbolRows(ctx context.Context) ([]adminSymbolRow, error) 
 		       y.enabled, y.listed_at,
 		       COALESCE(k.p_ref, 0), COALESCE(k.p_fair, 0),
 		       COALESCE((y.params->>'scaleBase')::bigint, 0),
-		       COALESCE(c.page_count, 0), c.last_page_at, c.last_vote_at, c.swept_at
+		       COALESCE(c.page_count, 0), c.last_page_at, c.last_vote_at, c.swept_at,
+		       (SELECT COUNT(*) FROM stock_positions p WHERE p.symbol = y.code AND p.qty <> 0),
+		       (SELECT COUNT(*) FROM stock_orders o
+		         WHERE o.symbol = y.code AND o.status = 'open' AND o.user_id IS NOT NULL)
 		FROM stock_symbols y
 		LEFT JOIN stock_maker k ON k.symbol   = y.code
 		LEFT JOIN crom_sites  c ON c.site_url = y.site_url
@@ -114,7 +128,8 @@ func (s *Server) adminSymbolRows(ctx context.Context) ([]adminSymbolRow, error) 
 		var v adminSymbolRow
 		if err := rows.Scan(&v.Code, &v.Name, &v.ShortName, &v.Source, &v.SiteURL,
 			&v.Enabled, &v.ListedAt, &v.Price, &v.Fair, &v.ScaleBase,
-			&v.MirrorPages, &v.LastPageAt, &v.LastVoteAt, &v.SweptAt); err != nil {
+			&v.MirrorPages, &v.LastPageAt, &v.LastVoteAt, &v.SweptAt,
+			&v.Holders, &v.OpenOrders); err != nil {
 			return nil, err
 		}
 		v.Price, v.Fair = round2(v.Price), round2(v.Fair)
@@ -145,6 +160,20 @@ func (s *Server) handleAdminStock(w http.ResponseWriter, r *http.Request) error 
 	}
 
 	if st.Symbols, err = s.adminSymbolRows(ctx); err != nil {
+		return err
+	}
+	if err := s.db.QueryRow(ctx, `
+		SELECT
+			(SELECT COUNT(DISTINCT user_id) FROM stock_positions WHERE qty <> 0),
+			(SELECT COUNT(*) FROM stock_orders WHERE status = 'open' AND user_id IS NOT NULL),
+			COALESCE(SUM(gross) FILTER (WHERE side = 'buy'), 0),
+			COALESCE(SUM(gross) FILTER (WHERE side = 'sell'), 0),
+			COALESCE(SUM(fee), 0),
+			COUNT(*)
+		FROM stock_trades
+		WHERE user_id IS NOT NULL`,
+	).Scan(&st.Market.Holders, &st.Market.OpenOrders, &st.Market.Bought,
+		&st.Market.Sold, &st.Market.Fees, &st.Market.Trades); err != nil {
 		return err
 	}
 
@@ -179,7 +208,7 @@ func (s *Server) handleAdminStock(w http.ResponseWriter, r *http.Request) error 
 		SELECT
 			COALESCE(SUM(fee) FILTER (WHERE user_id IS NOT NULL), 0),
 			COALESCE(SUM(qty) FILTER (
-				WHERE at >= date_trunc('day', now()) AND side = taker_side), 0),
+				WHERE at >= date_trunc('day', now() AT TIME ZONE INTERVAL '+08:00') AT TIME ZONE INTERVAL '+08:00' AND side = taker_side), 0),
 			(SELECT COUNT(*) FROM stock_orders
 			  WHERE symbol = $1 AND status = 'open' AND user_id IS NOT NULL)
 		FROM stock_trades WHERE symbol = $1`, m.Code,
