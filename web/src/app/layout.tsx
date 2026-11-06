@@ -4,7 +4,7 @@ import { SessionProvider } from "@/components/session";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "SCPPER-CLOUD", template: "%s" },
+  title: { default: "云币 - SCPPER-CLOUD", template: "%s - SCPPER-CLOUD" },
 };
 
 export const viewport: Viewport = {
